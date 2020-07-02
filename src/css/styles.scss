@@ -304,6 +304,17 @@
     }
   }
 
+  .dropdown-select__language.dropdown-select--floating {
+    position: fixed;
+    bottom: 10px;
+    :root[dir="ltr"] & {
+      right: 44px;
+    }
+    :root[dir="rtl"] & {
+      left: 44px;
+    }
+  }
+
   .dropdown-select {
     height: 1.5rem;
     padding: 0;
@@ -315,7 +326,7 @@
     font-size: 0.8rem;
     outline: none;
     appearance: none;
-    background-image: url("https://free-use.s3-us-west-2.amazonaws.com/up-sort.svg");
+    background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="292.4" height="292.4" viewBox="0 0 292 292"><path d="M287 197L159 69c-4-3-8-5-13-5s-9 2-13 5L5 197c-3 4-5 8-5 13s2 9 5 13c4 4 8 5 13 5h256c5 0 9-1 13-5s5-8 5-13-1-9-5-13z"/></svg>');
     background-repeat: no-repeat;
     background-position: right 0.7rem top 50%, 0 0;
     :root[dir="rtl"] & {
@@ -337,17 +348,6 @@
     &.dropdown-select--floating {
       position: absolute;
       margin: 0.5em;
-    }
-  }
-
-  .dropdown-select__language.dropdown-select--floating {
-    position: absolute;
-    bottom: 10px;
-    :root[dir="ltr"] & {
-      right: 44px;
-    }
-    :root[dir="rtl"] & {
-      left: 44px;
     }
   }
 

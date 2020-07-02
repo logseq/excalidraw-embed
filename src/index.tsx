@@ -32,12 +32,16 @@ if (
 
 const SentryEnvHostnameMap: { [key: string]: string } = {
   "excalidraw.com": "production",
-  "now.sh": "staging",
+  "vercel.app": "staging",
 };
+
+const REACT_APP_DISABLE_SENTRY =
+  process.env.REACT_APP_DISABLE_SENTRY === "true";
+const REACT_APP_GIT_SHA = process.env.REACT_APP_GIT_SHA as string;
 
 // Disable Sentry locally or inside the Docker to avoid noise/respect privacy
 const onlineEnv =
-  process.env.REACT_APP_DISABLE_SENTRY !== "true" &&
+  !REACT_APP_DISABLE_SENTRY &&
   Object.keys(SentryEnvHostnameMap).find(
     (item) => window.location.hostname.indexOf(item) >= 0,
   );
@@ -47,7 +51,7 @@ Sentry.init({
     ? "https://7bfc596a5bf945eda6b660d3015a5460@sentry.io/5179260"
     : undefined,
   environment: onlineEnv ? SentryEnvHostnameMap[onlineEnv] : undefined,
-  release: process.env.REACT_APP_GIT_SHA,
+  release: REACT_APP_GIT_SHA,
   ignoreErrors: [
     "undefined is not an object (evaluating 'window.__pad.performLoop')", // Only happens on Safari, but spams our servers. Doesn't break anything
   ],
@@ -105,6 +109,9 @@ function ExcalidrawApp() {
     </TopErrorBoundary>
   );
 }
+
+window.__EXCALIDRAW_SHA__ = REACT_APP_GIT_SHA;
+
 // Block pinch-zooming on iOS outside of the content area
 document.addEventListener(
   "touchmove",

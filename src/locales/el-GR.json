@@ -2,6 +2,7 @@
   "labels": {
     "paste": "Επικόλληση",
     "selectAll": "Επιλογή όλων",
+    "moveCanvas": "Μετακίνηση καμβά",
     "copy": "Αντιγραφή",
     "copyAsPng": "Αντιγραφή στο πρόχειρο ως PNG",
     "copyAsSvg": "Αντιγραφή στο πρόχειρο ως SVG",
@@ -61,7 +62,9 @@
     "yourName": "Το όνομά σου",
     "madeWithExcalidraw": "Φτιαγμένο με Excalidraw",
     "group": "Δημιουργία ομάδας από επιλογή",
-    "ungroup": "Κατάργηση ομάδας από επιλογή"
+    "ungroup": "Κατάργηση ομάδας από επιλογή",
+    "collaborators": "Συνεργάτες",
+    "toggleGridMode": "Εναλλαγή λειτουργίας πλέγματος"
   },
   "buttons": {
     "clearReset": "Επαναφορά του καμβά",

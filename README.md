@@ -171,6 +171,10 @@ Currently it only contains the below keys, more to be added in future.
 | zenModeEnabled      | boolean | false   | Decides whether to enable zen mode |
 | viewBackgroundColor | string  | #fff    | The background color of Excalidraw |
 
+Translations will be available on the app if they exceed a certain threshold of completion (currently 85%).
+
+## Excalidraw is built using these awesome tools
+
 Here is how you use it
 
 ```javascript

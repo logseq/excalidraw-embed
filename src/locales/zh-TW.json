@@ -2,6 +2,7 @@
   "labels": {
     "paste": "貼上",
     "selectAll": "全選",
+    "moveCanvas": "移動畫布",
     "copy": "複製",
     "copyAsPng": "複製 PNG 至剪貼簿",
     "copyAsSvg": "複製 SVG 至剪貼簿",
@@ -61,7 +62,9 @@
     "yourName": "你的名稱",
     "madeWithExcalidraw": "以 Excalidraw 製作",
     "group": "建立群組",
-    "ungroup": "取消群組"
+    "ungroup": "取消群組",
+    "collaborators": "協作者",
+    "toggleGridMode": "切換格線模式"
   },
   "buttons": {
     "clearReset": "重置 canvas",

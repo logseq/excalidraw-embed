@@ -2,6 +2,7 @@
   "labels": {
     "paste": "Liitä",
     "selectAll": "Valitse kaikki",
+    "moveCanvas": "Siirrä piirtoaluetta",
     "copy": "Kopioi",
     "copyAsPng": "Kopioi leikepöydälle PNG-tiedostona",
     "copyAsSvg": "Kopioi leikepöydälle SVG-tiedostona",
@@ -61,7 +62,9 @@
     "yourName": "Nimesi",
     "madeWithExcalidraw": "Tehty Excalidrawilla",
     "group": "Ryhmitä valinta",
-    "ungroup": "Pura valittu ryhmä"
+    "ungroup": "Pura valittu ryhmä",
+    "collaborators": "Yhteistyökumppanit",
+    "toggleGridMode": "Ruudukko päälle/pois"
   },
   "buttons": {
     "clearReset": "Tyhjennä piirtoalue",

@@ -27,6 +27,10 @@ import {
   getResizeArrowDirection,
   getResizeHandlerFromCoords,
   isNonDeletedElement,
+  updateTextElement,
+  dragSelectedElements,
+  getDragOffsetXY,
+  dragNewElement,
 } from "../element";
 import {
   getElementsWithinSelection,
@@ -51,9 +55,13 @@ import Portal from "./Portal";
 
 import { renderScene } from "../renderer";
 import { AppState, GestureEvent, Gesture } from "../types";
-import { ExcalidrawElement, ExcalidrawTextElement } from "../element/types";
+import {
+  ExcalidrawElement,
+  ExcalidrawTextElement,
+  NonDeleted,
+} from "../element/types";
 
-import { distance2d, isPathALoop } from "../math";
+import { distance2d, isPathALoop, getGridPoint } from "../math";
 
 import {
   isWritableElement,
@@ -71,6 +79,7 @@ import {
   isArrowKey,
   getResizeCenterPointKey,
   getResizeWithSidesSameLengthKey,
+  getRotateWithDiscreteAngleKey,
 } from "../keys";
 
 import { findShapeByKey, shapesShortcutKeys } from "../shapes";
@@ -108,6 +117,8 @@ import {
   EVENT,
   ENV,
   CANVAS_ONLY_ACTIONS,
+  DEFAULT_VERTICAL_ALIGN,
+  GRID_SIZE,
 } from "../constants";
 import {
   INITAL_SCENE_UPDATE_TIMEOUT,
@@ -638,7 +649,11 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     if (scrollBars) {
       currentScrollBars = scrollBars;
     }
-    const scrolledOutside = !atLeastOneVisibleElement && elements.length > 0;
+    const scrolledOutside =
+      // hide when editing text
+      this.state.editingElement?.type === "text"
+        ? false
+        : !atLeastOneVisibleElement && elements.length > 0;
     if (this.state.scrolledOutside !== scrolledOutside) {
       this.setState({ scrolledOutside: scrolledOutside });
     }
@@ -850,6 +865,7 @@ class App extends React.Component<ExcalidrawProps, AppState> {
       fontSize: this.state.currentItemFontSize,
       fontFamily: this.state.currentItemFontFamily,
       textAlign: this.state.currentItemTextAlign,
+      verticalAlign: DEFAULT_VERTICAL_ALIGN,
     });
 
     globalSceneState.replaceAllElements([
@@ -896,6 +912,12 @@ class App extends React.Component<ExcalidrawProps, AppState> {
   toggleZenMode = () => {
     this.setState({
       zenModeEnabled: !this.state.zenModeEnabled,
+    });
+  };
+
+  toggleGridMode = () => {
+    this.setState({
+      gridSize: this.state.gridSize ? null : GRID_SIZE,
     });
   };
 
@@ -1228,6 +1250,10 @@ class App extends React.Component<ExcalidrawProps, AppState> {
       this.toggleZenMode();
     }
 
+    if (event[KEYS.CTRL_OR_CMD] && event.keyCode === KEYS.GRID_KEY_CODE) {
+      this.toggleGridMode();
+    }
+
     if (event.code === "KeyC" && event.altKey && event.shiftKey) {
       this.copyToClipboardAsPng();
       event.preventDefault();
@@ -1241,9 +1267,12 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     const shape = findShapeByKey(event.key);
 
     if (isArrowKey(event.key)) {
-      const step = event.shiftKey
-        ? ELEMENT_SHIFT_TRANSLATE_AMOUNT
-        : ELEMENT_TRANSLATE_AMOUNT;
+      const step =
+        (this.state.gridSize &&
+          (event.shiftKey ? ELEMENT_TRANSLATE_AMOUNT : this.state.gridSize)) ||
+        (event.shiftKey
+          ? ELEMENT_SHIFT_TRANSLATE_AMOUNT
+          : ELEMENT_TRANSLATE_AMOUNT);
       globalSceneState.replaceAllElements(
         globalSceneState.getElementsIncludingDeleted().map((el) => {
           if (this.state.selectedElementIds[el.id]) {
@@ -1287,12 +1316,9 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         !isLinearElement(selectedElements[0])
       ) {
         const selectedElement = selectedElements[0];
-        const x = selectedElement.x + selectedElement.width / 2;
-        const y = selectedElement.y + selectedElement.height / 2;
-
         this.startTextEditing({
-          x: x,
-          y: y,
+          sceneX: selectedElement.x + selectedElement.width / 2,
+          sceneY: selectedElement.y + selectedElement.height / 2,
         });
         event.preventDefault();
         return;
@@ -1383,10 +1409,10 @@ class App extends React.Component<ExcalidrawProps, AppState> {
   private handleTextWysiwyg(
     element: ExcalidrawTextElement,
     {
-      x,
-      y,
       isExistingElement = false,
-    }: { x: number; y: number; isExistingElement?: boolean },
+    }: {
+      isExistingElement?: boolean;
+    },
   ) {
     const resetSelection = () => {
       this.setState({
@@ -1395,26 +1421,13 @@ class App extends React.Component<ExcalidrawProps, AppState> {
       });
     };
 
-    const deleteElement = () => {
-      globalSceneState.replaceAllElements([
-        ...globalSceneState.getElementsIncludingDeleted().map((_element) => {
-          if (_element.id === element.id) {
-            return newElementWith(_element, { isDeleted: true });
-          }
-          return _element;
-        }),
-      ]);
-    };
-
     const updateElement = (text: string) => {
       globalSceneState.replaceAllElements([
         ...globalSceneState.getElementsIncludingDeleted().map((_element) => {
-          if (_element.id === element.id) {
-            return newTextElement({
-              ...(_element as ExcalidrawTextElement),
-              x: element.x,
-              y: element.y,
+          if (_element.id === element.id && isTextElement(_element)) {
+            return updateTextElement(_element, {
               text,
+              isDeleted: !text.trim(),
             });
           }
           return _element;
@@ -1424,22 +1437,18 @@ class App extends React.Component<ExcalidrawProps, AppState> {
 
     textWysiwyg({
       id: element.id,
-      x,
-      y,
-      initText: element.text,
-      strokeColor: element.strokeColor,
-      opacity: element.opacity,
-      fontSize: element.fontSize,
-      fontFamily: element.fontFamily,
-      angle: element.angle,
-      textAlign: element.textAlign,
       zoom: this.state.zoom,
+      getViewportCoords: (x, y) => {
+        const { x: viewportX, y: viewportY } = sceneCoordsToViewportCoords(
+          { sceneX: x, sceneY: y },
+          this.state,
+          this.canvas,
+          window.devicePixelRatio,
+        );
+        return [viewportX, viewportY];
+      },
       onChange: withBatchedUpdates((text) => {
-        if (text) {
-          updateElement(text);
-        } else {
-          deleteElement();
-        }
+        updateElement(text);
       }),
       onSubmit: withBatchedUpdates((text) => {
         updateElement(text);
@@ -1456,7 +1465,7 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         resetSelection();
       }),
       onCancel: withBatchedUpdates(() => {
-        deleteElement();
+        updateElement("");
         if (isExistingElement) {
           history.resumeRecording();
         }
@@ -1475,20 +1484,11 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     updateElement(element.text);
   }
 
-  private startTextEditing = ({
-    x,
-    y,
-    clientX,
-    clientY,
-    centerIfPossible = true,
-  }: {
-    x: number;
-    y: number;
-    clientX?: number;
-    clientY?: number;
-    centerIfPossible?: boolean;
-  }) => {
-    const elementAtPosition = getElementAtPosition(
+  private getTextElementAtPosition(
+    x: number,
+    y: number,
+  ): NonDeleted<ExcalidrawTextElement> | null {
+    const element = getElementAtPosition(
       globalSceneState.getElements(),
       this.state,
       x,
@@ -1496,78 +1496,83 @@ class App extends React.Component<ExcalidrawProps, AppState> {
       this.state.zoom,
     );
 
-    const element =
-      elementAtPosition && isTextElement(elementAtPosition)
-        ? elementAtPosition
-        : newTextElement({
-            x: x,
-            y: y,
-            strokeColor: this.state.currentItemStrokeColor,
-            backgroundColor: this.state.currentItemBackgroundColor,
-            fillStyle: this.state.currentItemFillStyle,
-            strokeWidth: this.state.currentItemStrokeWidth,
-            strokeStyle: this.state.currentItemStrokeStyle,
-            roughness: this.state.currentItemRoughness,
-            opacity: this.state.currentItemOpacity,
-            text: "",
-            fontSize: this.state.currentItemFontSize,
-            fontFamily: this.state.currentItemFontFamily,
-            textAlign: this.state.currentItemTextAlign,
-          });
+    if (element && isTextElement(element) && !element.isDeleted) {
+      return element;
+    }
+    return null;
+  }
 
-    this.setState({ editingElement: element });
+  private startTextEditing = ({
+    sceneX,
+    sceneY,
+    insertAtParentCenter = true,
+  }: {
+    /** X position to insert text at */
+    sceneX: number;
+    /** Y position to insert text at */
+    sceneY: number;
+    /** whether to attempt to insert at element center if applicable */
+    insertAtParentCenter?: boolean;
+  }) => {
+    const existingTextElement = this.getTextElementAtPosition(sceneX, sceneY);
 
-    let textX = clientX || x;
-    let textY = clientY || y;
-
-    let isExistingTextElement = false;
-
-    if (elementAtPosition && isTextElement(elementAtPosition)) {
-      isExistingTextElement = true;
-      const centerElementX = elementAtPosition.x + elementAtPosition.width / 2;
-      const centerElementY = elementAtPosition.y + elementAtPosition.height / 2;
-
-      const {
-        x: centerElementXInViewport,
-        y: centerElementYInViewport,
-      } = sceneCoordsToViewportCoords(
-        { sceneX: centerElementX, sceneY: centerElementY },
+    const parentCenterPosition =
+      insertAtParentCenter &&
+      this.getTextWysiwygSnappedToCenterPosition(
+        sceneX,
+        sceneY,
         this.state,
         this.canvas,
         window.devicePixelRatio,
       );
 
-      textX = centerElementXInViewport + this.parentDOMLeft;
-      textY = centerElementYInViewport + this.parentDOMTop;
+    const element = existingTextElement
+      ? existingTextElement
+      : newTextElement({
+          x: parentCenterPosition
+            ? parentCenterPosition.elementCenterX
+            : sceneX,
+          y: parentCenterPosition
+            ? parentCenterPosition.elementCenterY
+            : sceneY,
+          strokeColor: this.state.currentItemStrokeColor,
+          backgroundColor: this.state.currentItemBackgroundColor,
+          fillStyle: this.state.currentItemFillStyle,
+          strokeWidth: this.state.currentItemStrokeWidth,
+          strokeStyle: this.state.currentItemStrokeStyle,
+          roughness: this.state.currentItemRoughness,
+          opacity: this.state.currentItemOpacity,
+          text: "",
+          fontSize: this.state.currentItemFontSize,
+          fontFamily: this.state.currentItemFontFamily,
+          textAlign: parentCenterPosition
+            ? "center"
+            : this.state.currentItemTextAlign,
+          verticalAlign: parentCenterPosition
+            ? "middle"
+            : DEFAULT_VERTICAL_ALIGN,
+        });
 
-      // x and y will change after calling newTextElement function
-      mutateElement(element, {
-        x: centerElementX,
-        y: centerElementY,
-      });
+    this.setState({ editingElement: element });
+
+    if (existingTextElement) {
+      // if text element is no longer centered to a container, reset
+      //  verticalAlign to default because it's currently internal-only
+      if (!parentCenterPosition || element.textAlign !== "center") {
+        mutateElement(element, { verticalAlign: DEFAULT_VERTICAL_ALIGN });
+      }
     } else {
       globalSceneState.replaceAllElements([
         ...globalSceneState.getElementsIncludingDeleted(),
         element,
       ]);
 
-      if (centerIfPossible) {
-        const snappedToCenterPosition = this.getTextWysiwygSnappedToCenterPosition(
-          x,
-          y,
-          this.state,
-          this.canvas,
-          window.devicePixelRatio,
-        );
-
-        if (snappedToCenterPosition) {
-          mutateElement(element, {
-            x: snappedToCenterPosition.elementCenterX,
-            y: snappedToCenterPosition.elementCenterY,
-          });
-          textX = snappedToCenterPosition.wysiwygX;
-          textY = snappedToCenterPosition.wysiwygY;
-        }
+      // case: creating new text not centered to parent elemenent → offset Y
+      //  so that the text is centered to cursor position
+      if (!parentCenterPosition) {
+        mutateElement(element, {
+          y: element.y - element.baseline / 2,
+        });
       }
     }
 
@@ -1576,9 +1581,7 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     });
 
     this.handleTextWysiwyg(element, {
-      x: textX,
-      y: textY,
-      isExistingElement: isExistingTextElement,
+      isExistingElement: !!existingTextElement,
     });
   };
 
@@ -1611,7 +1614,7 @@ class App extends React.Component<ExcalidrawProps, AppState> {
 
     resetCursor();
 
-    const { x, y } = viewportCoordsToSceneCoords(
+    const { x: sceneX, y: sceneY } = viewportCoordsToSceneCoords(
       event,
       this.state,
       this.canvas,
@@ -1626,8 +1629,8 @@ class App extends React.Component<ExcalidrawProps, AppState> {
       const hitElement = getElementAtPosition(
         elements,
         this.state,
-        x,
-        y,
+        sceneX,
+        sceneY,
         this.state.zoom,
       );
 
@@ -1654,11 +1657,9 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     resetCursor();
 
     this.startTextEditing({
-      x: x,
-      y: y,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      centerIfPossible: !event.altKey,
+      sceneX,
+      sceneY,
+      insertAtParentCenter: !event.altKey,
     });
   };
 
@@ -2074,6 +2075,11 @@ class App extends React.Component<ExcalidrawProps, AppState> {
 
     const originX = x;
     const originY = y;
+    const [originGridX, originGridY] = getGridPoint(
+      originX,
+      originY,
+      this.state.gridSize,
+    );
 
     type ResizeTestType = ReturnType<typeof resizeTest>;
     let resizeHandle: ResizeTestType = false;
@@ -2084,6 +2090,7 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     let resizeArrowDirection: "origin" | "end" = "origin";
     let isResizingElements = false;
     let draggingOccurred = false;
+    let dragOffsetXY: [number, number] | null = null;
     let hitElement: ExcalidrawElement | null = null;
     let hitElementWasAddedToSelection = false;
 
@@ -2250,20 +2257,10 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         return;
       }
 
-      const { x, y } = viewportCoordsToSceneCoords(
-        event,
-        this.state,
-        this.canvas,
-        window.devicePixelRatio,
-        { deltaX: this.parentDOMLeft, deltaY: this.parentDOMTop },
-      );
-
       this.startTextEditing({
-        x: x,
-        y: y,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        centerIfPossible: !event.altKey,
+        sceneX: x,
+        sceneY: y,
+        insertAtParentCenter: !event.altKey,
       });
 
       resetCursor();
@@ -2322,10 +2319,15 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         });
         document.documentElement.style.cursor = CURSOR_TYPE.POINTER;
       } else {
+        const [gridX, gridY] = getGridPoint(
+          x,
+          y,
+          this.state.elementType === "draw" ? null : this.state.gridSize,
+        );
         const element = newLinearElement({
           type: this.state.elementType,
-          x: x,
-          y: y,
+          x: gridX,
+          y: gridY,
           strokeColor: this.state.currentItemStrokeColor,
           backgroundColor: this.state.currentItemBackgroundColor,
           fillStyle: this.state.currentItemFillStyle,
@@ -2353,10 +2355,11 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         });
       }
     } else {
+      const [gridX, gridY] = getGridPoint(x, y, this.state.gridSize);
       const element = newElement({
         type: this.state.elementType,
-        x: x,
-        y: y,
+        x: gridX,
+        y: gridY,
         strokeColor: this.state.currentItemStrokeColor,
         backgroundColor: this.state.currentItemBackgroundColor,
         fillStyle: this.state.currentItemFillStyle,
@@ -2387,6 +2390,18 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     let selectedElementWasDuplicated = false;
 
     const onPointerMove = withBatchedUpdates((event: PointerEvent) => {
+      // We need to initialize dragOffsetXY only after we've updated
+      // `state.selectedElementIds` on pointerDown. Doing it here in pointerMove
+      // event handler should hopefully ensure we're already working with
+      // the updated state.
+      if (dragOffsetXY === null) {
+        dragOffsetXY = getDragOffsetXY(
+          getSelectedElements(globalSceneState.getElements(), this.state),
+          originX,
+          originY,
+        );
+      }
+
       const target = event.target;
       if (!(target instanceof HTMLElement)) {
         return;
@@ -2419,6 +2434,7 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         window.devicePixelRatio,
         { deltaX: this.parentDOMLeft, deltaY: this.parentDOMTop },
       );
+      const [gridX, gridY] = getGridPoint(x, y, this.state.gridSize);
 
       // for arrows/lines, don't start dragging until a given threshold
       //  to ensure we don't create a 2-point arrow by mistake when
@@ -2443,15 +2459,22 @@ class App extends React.Component<ExcalidrawProps, AppState> {
           isResizing: resizeHandle && resizeHandle !== "rotation",
           isRotating: resizeHandle === "rotation",
         });
+        const [resizeX, resizeY] = getGridPoint(
+          x - resizeOffsetXY[0],
+          y - resizeOffsetXY[1],
+          this.state.gridSize,
+        );
         if (
           resizeElements(
             resizeHandle,
             setResizeHandle,
             selectedElements,
             resizeArrowDirection,
-            event,
-            x - resizeOffsetXY[0],
-            y - resizeOffsetXY[1],
+            getRotateWithDiscreteAngleKey(event),
+            getResizeWithSidesSameLengthKey(event),
+            getResizeCenterPointKey(event),
+            resizeX,
+            resizeY,
           )
         ) {
           return;
@@ -2484,22 +2507,12 @@ class App extends React.Component<ExcalidrawProps, AppState> {
           this.state,
         );
         if (selectedElements.length > 0) {
-          const { x, y } = viewportCoordsToSceneCoords(
-            event,
-            this.state,
-            this.canvas,
-            window.devicePixelRatio,
-            { deltaX: this.parentDOMLeft, deltaY: this.parentDOMTop },
+          const [dragX, dragY] = getGridPoint(
+            x - dragOffsetXY[0],
+            y - dragOffsetXY[1],
+            this.state.gridSize,
           );
-
-          selectedElements.forEach((element) => {
-            mutateElement(element, {
-              x: element.x + x - lastX,
-              y: element.y + y - lastY,
-            });
-          });
-          lastX = x;
-          lastY = y;
+          dragSelectedElements(selectedElements, dragX, dragY);
 
           // We duplicate the selected element if alt is pressed on pointer move
           if (event.altKey && !selectedElementWasDuplicated) {
@@ -2524,9 +2537,14 @@ class App extends React.Component<ExcalidrawProps, AppState> {
                   groupIdMap,
                   element,
                 );
+                const [originDragX, originDragY] = getGridPoint(
+                  originX - dragOffsetXY[0],
+                  originY - dragOffsetXY[1],
+                  this.state.gridSize,
+                );
                 mutateElement(duplicatedElement, {
-                  x: duplicatedElement.x + (originX - lastX),
-                  y: duplicatedElement.y + (originY - lastY),
+                  x: duplicatedElement.x + (originDragX - dragX),
+                  y: duplicatedElement.y + (originDragY - dragY),
                 });
                 nextElements.push(duplicatedElement);
                 elementsToAppend.push(element);
@@ -2550,16 +2568,20 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         return;
       }
 
-      let width = distance(originX, x);
-      let height = distance(originY, y);
-
       if (isLinearElement(draggingElement)) {
         draggingOccurred = true;
         const points = draggingElement.points;
-        let dx = x - draggingElement.x;
-        let dy = y - draggingElement.y;
+        let dx: number;
+        let dy: number;
+        if (draggingElement.type === "draw") {
+          dx = x - draggingElement.x;
+          dy = y - draggingElement.y;
+        } else {
+          dx = gridX - draggingElement.x;
+          dy = gridY - draggingElement.y;
+        }
 
-        if (event.shiftKey && points.length === 2) {
+        if (getRotateWithDiscreteAngleKey(event) && points.length === 2) {
           ({ width: dx, height: dy } = getPerfectElementSize(
             this.state.elementType,
             dx,
@@ -2580,35 +2602,32 @@ class App extends React.Component<ExcalidrawProps, AppState> {
             });
           }
         }
+      } else if (draggingElement.type === "selection") {
+        dragNewElement(
+          draggingElement,
+          this.state.elementType,
+          originX,
+          originY,
+          x,
+          y,
+          distance(originX, x),
+          distance(originY, y),
+          getResizeWithSidesSameLengthKey(event),
+          getResizeCenterPointKey(event),
+        );
       } else {
-        if (getResizeWithSidesSameLengthKey(event)) {
-          ({ width, height } = getPerfectElementSize(
-            this.state.elementType,
-            width,
-            y < originY ? -height : height,
-          ));
-
-          if (height < 0) {
-            height = -height;
-          }
-        }
-
-        let newX = x < originX ? originX - width : originX;
-        let newY = y < originY ? originY - height : originY;
-
-        if (getResizeCenterPointKey(event)) {
-          width += width;
-          height += height;
-          newX = originX - width / 2;
-          newY = originY - height / 2;
-        }
-
-        mutateElement(draggingElement, {
-          x: newX,
-          y: newY,
-          width: width,
-          height: height,
-        });
+        dragNewElement(
+          draggingElement,
+          this.state.elementType,
+          originGridX,
+          originGridY,
+          gridX,
+          gridY,
+          distance(originGridX, gridX),
+          distance(originGridY, gridY),
+          getResizeWithSidesSameLengthKey(event),
+          getResizeCenterPointKey(event),
+        );
       }
 
       if (this.state.elementType === "selection") {
@@ -2657,7 +2676,12 @@ class App extends React.Component<ExcalidrawProps, AppState> {
         resizingElement: null,
         selectionElement: null,
         cursorButton: "up",
-        editingElement: multiElement ? this.state.editingElement : null,
+        // text elements are reset on finalize, and resetting on pointerup
+        //  may cause issues with double taps
+        editingElement:
+          multiElement || isTextElement(this.state.editingElement)
+            ? this.state.editingElement
+            : null,
       });
 
       this.savePointer(childEvent.clientX, childEvent.clientY, "up");
@@ -2923,6 +2947,10 @@ class App extends React.Component<ExcalidrawProps, AppState> {
           ...this.actionManager.getContextMenuItems((action) =>
             CANVAS_ONLY_ACTIONS.includes(action.name),
           ),
+          {
+            label: t("labels.toggleGridMode"),
+            action: this.toggleGridMode,
+          },
         ],
         top: event.clientY,
         left: event.clientX,
@@ -3021,7 +3049,9 @@ class App extends React.Component<ExcalidrawProps, AppState> {
     scale: number,
   ) {
     const elementClickedInside = getElementContainingPosition(
-      globalSceneState.getElementsIncludingDeleted(),
+      globalSceneState
+        .getElementsIncludingDeleted()
+        .filter((element) => !isTextElement(element)),
       x,
       y,
     );
@@ -3041,13 +3071,13 @@ class App extends React.Component<ExcalidrawProps, AppState> {
       const isSnappedToCenter =
         distanceToCenter < TEXT_TO_CENTER_SNAP_THRESHOLD;
       if (isSnappedToCenter) {
-        const { x: wysiwygX, y: wysiwygY } = sceneCoordsToViewportCoords(
+        const { x: viewportX, y: viewportY } = sceneCoordsToViewportCoords(
           { sceneX: elementCenterX, sceneY: elementCenterY },
           state,
           canvas,
           scale,
         );
-        return { wysiwygX, wysiwygY, elementCenterX, elementCenterY };
+        return { viewportX, viewportY, elementCenterX, elementCenterY };
       }
     }
   }
