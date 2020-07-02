@@ -7,6 +7,9 @@ import "../public/app.css";
 import "./css/styles.scss";
 
 import { ExcalidrawProps } from "./types";
+import { InitializeApp } from "./components/InitializeApp";
+import { TopErrorBoundary } from "./components/TopErrorBoundary";
+import { IsMobileProvider } from "./is-mobile";
 
 const Excalidraw = (props: ExcalidrawProps) => {
   const {
@@ -37,17 +40,23 @@ const Excalidraw = (props: ExcalidrawProps) => {
   }, []);
 
   return (
-    <App
-      width={width}
-      height={height}
-      onChange={onChange}
-      onBlur={onBlur}
-      initialData={initialData}
-      user={user}
-      onUsernameChange={onUsernameChange}
-      onResize={onResize}
-      options={options}
-    />
+    <TopErrorBoundary>
+      <IsMobileProvider>
+        <InitializeApp>
+          <App
+            width={width}
+            height={height}
+            onChange={onChange}
+            onBlur={onBlur}
+            initialData={initialData}
+            user={user}
+            onUsernameChange={onUsernameChange}
+            onResize={onResize}
+            options={options}
+          />
+        </InitializeApp>
+      </IsMobileProvider>
+    </TopErrorBoundary>
   );
 };
 export default Excalidraw;
