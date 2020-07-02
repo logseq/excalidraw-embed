@@ -5,6 +5,7 @@ import * as SentryIntegrations from "@sentry/integrations";
 
 import { EVENT } from "./constants";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
+import { InitializeApp } from "./components/InitializeApp";
 import { IsMobileProvider } from "./is-mobile";
 import App from "./components/App";
 import { register as registerServiceWorker } from "./serviceWorker";
@@ -95,16 +96,18 @@ function ExcalidrawApp() {
   return (
     <TopErrorBoundary>
       <IsMobileProvider>
-        <App
-          width={width}
-          height={height}
-          onChange={saveDebounced}
-          onBlur={onBlur}
-          initialData={initialData}
-          user={user}
-          onUsernameChange={onUsernameChange}
-          onResize={onResize}
-        />
+        <InitializeApp>
+          <App
+            width={width}
+            height={height}
+            onChange={saveDebounced}
+            onBlur={onBlur}
+            initialData={initialData}
+            user={user}
+            onUsernameChange={onUsernameChange}
+            onResize={onResize}
+          />
+        </InitializeApp>
       </IsMobileProvider>
     </TopErrorBoundary>
   );

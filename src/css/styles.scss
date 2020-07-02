@@ -304,17 +304,6 @@
     }
   }
 
-  .dropdown-select__language.dropdown-select--floating {
-    position: fixed;
-    bottom: 10px;
-    :root[dir="ltr"] & {
-      right: 44px;
-    }
-    :root[dir="rtl"] & {
-      left: 44px;
-    }
-  }
-
   .dropdown-select {
     height: 1.5rem;
     padding: 0;
@@ -347,7 +336,18 @@
     }
     &.dropdown-select--floating {
       position: absolute;
-      margin: 0.5em;
+      margin-right: 0.5em;
+    }
+  }
+
+  .dropdown-select__language.dropdown-select--floating {
+    position: fixed;
+    bottom: 10px;
+    :root[dir="ltr"] & {
+      right: 44px;
+    }
+    :root[dir="rtl"] & {
+      left: 44px;
     }
   }
 
