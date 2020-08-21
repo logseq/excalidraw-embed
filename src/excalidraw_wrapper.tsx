@@ -10,6 +10,8 @@ import { ExcalidrawProps } from "./types";
 import { InitializeApp } from "./components/InitializeApp";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 import { IsMobileProvider } from "./is-mobile";
+import { serializeAsJSON } from "./data/json";
+import { loadFromBlob } from "./data/blob";
 
 const Excalidraw = (props: ExcalidrawProps) => {
   const {
@@ -59,4 +61,5 @@ const Excalidraw = (props: ExcalidrawProps) => {
     </TopErrorBoundary>
   );
 };
-export default Excalidraw;
+
+export { serializeAsJSON, loadFromBlob, Excalidraw as default };
